@@ -13,27 +13,34 @@ jobs:
           repository: 'yxsra/MagiskResetPropMod'
           fetch-depth: 0
 
-      - name: Setup NDK
-        uses: nwidart/setup-ndk@v1
-        with:
-          ndk-version: r26b # Bản NDK ổn định cho Android 14
+      - name: Install NDK (Official Method)
+        run: |
+          # Tải NDK r26b trực tiếp từ máy chủ Google
+          wget -q https://dl.google.com/android/repository/android-ndk-r26b-linux.zip
+          unzip -q android-ndk-r26b-linux.zip
+          # Thiết lập biến môi trường để dùng cho các bước sau
+          echo "ANDROID_NDK_ROOT=$(pwd)/android-ndk-r26b" >> $GITHUB_ENV
 
       - name: Stealth Patching (Xóa dấu vết)
         run: |
-          # 1. Xóa các dòng printf/fprintf để App ngân hàng không soi được log/chuỗi
+          # 1. Xóa sạch các dòng printf/fprintf để tránh bị app ngân hàng quét chuỗi
           sed -i 's/printf(/ \/\/ /g' src/main.cpp
           sed -i 's/fprintf(/ \/\/ /g' src/main.cpp
-          
-          # 2. Đổi tên công cụ trong code (nếu có)
-          sed -i 's/"resetprop"/"sys_helper"/g' src/main.cpp
+          # 2. Vô hiệu hóa log trong các file nguồn khác
+          sed -i 's/printf(/ \/\/ /g' src/resetprop.cpp
+          sed -i 's/fprintf(/ \/\/ /g' src/resetprop.cpp
 
       - name: Compile Static Binary
         run: |
-          # Thiết lập đường dẫn biên dịch
+          # Thiết lập đường dẫn compiler từ NDK vừa tải
           export TOOLCHAIN=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64
           export CLANG=$TOOLCHAIN/bin/aarch64-linux-android33-clang++
 
-          # Biên dịch trực tiếp với tất cả các cờ tối ưu và bảo mật
+          # Biên dịch trực tiếp:
+          # -Iinclude: Để tìm các file header của dự án
+          # -Os: Tối ưu dung lượng nhỏ nhất
+          # -static: Ép build tĩnh hoàn toàn (không phụ thuộc libc.so hệ thống)
+          # -s: Strip sạch bảng ký hiệu (Symbol table)
           $CLANG \
             -Iinclude \
             -Isrc \
@@ -52,9 +59,10 @@ jobs:
             -s \
             -o miui_sys_helper
 
-      - name: Verify Binary
+      - name: Verify Binary Integrity
         run: |
           ls -al miui_sys_helper
+          # Kiểm tra xem có đúng là Static và Stripped không
           file miui_sys_helper
 
       - name: Upload Stealth Binary
