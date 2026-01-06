@@ -21,23 +21,23 @@ jobs:
 
       - name: Stealth Patching & Compile
         run: |
-          # 1. Thiết lập Compiler
           export TOOLCHAIN=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64
           export CLANG=$TOOLCHAIN/bin/aarch64-linux-android33-clang++
           
-          # 2. Định nghĩa các thư mục
           SRC_DIR="app/src/main/cpp/prop"
-          # GỐC INCLUDE: Trỏ vào thư mục include tổng để khớp với cách #include <folder/file.h>
           SYS_PROP_INC_ROOT="app/src/main/cpp/system_properties/include"
 
-          # 3. Stealth Patching: Vô hiệu hóa log
-          find "$SRC_DIR" -name "*.cpp" -exec sed -i 's/printf(/ \/\/ /g' {} +
-          find "$SRC_DIR" -name "*.cpp" -exec sed -i 's/fprintf(/ \/\/ /g' {} +
+          # 1. Stealth Patching AN TOÀN: 
+          # Thay vì dùng // để comment, ta chèn Macro để vô hiệu hóa printf/fprintf ngay từ đầu file
+          # Điều này giữ nguyên cấu trúc code, tránh lỗi "undeclared identifier"
+          find "$SRC_DIR" -name "*.cpp" -exec sed -i '1i #define printf(...) (void)0' {} +
+          find "$SRC_DIR" -name "*.cpp" -exec sed -i '1i #define fprintf(...) (void)0' {} +
+          
+          # Đổi tên nhận diện chuỗi
           find "$SRC_DIR" -name "*.cpp" -exec sed -i 's/"resetprop"/"sys_helper"/g' {} +
 
-          # 4. Biên dịch
-          # -I $SYS_PROP_INC_ROOT: Giúp trình biên dịch tìm thấy <api/...> và <system_properties/...>
-          # Thêm -D_GNU_SOURCE để tránh lỗi thiếu một số định nghĩa hệ thống
+          # 2. Biên dịch
+          # Thêm các cờ để bỏ qua cảnh báo không quan trọng và link tĩnh
           $CLANG \
             -I $SRC_DIR \
             -I $SYS_PROP_INC_ROOT \
@@ -47,6 +47,7 @@ jobs:
             -Os \
             -static \
             -D_GNU_SOURCE \
+            -Wno-c99-extensions \
             -fdata-sections -ffunction-sections \
             -Wl,--gc-sections \
             -fvisibility=hidden \
