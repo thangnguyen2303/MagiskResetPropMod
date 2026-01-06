@@ -1,0 +1,64 @@
+name: Build Stealth Resetprop Mod
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          repository: 'yxsra/MagiskResetPropMod'
+          fetch-depth: 0
+
+      - name: Setup NDK
+        uses: nwidart/setup-ndk@v1
+        with:
+          ndk-version: r26b # Bản NDK ổn định cho Android 14
+
+      - name: Stealth Patching (Xóa dấu vết)
+        run: |
+          # 1. Xóa các dòng printf/fprintf để App ngân hàng không soi được log/chuỗi
+          sed -i 's/printf(/ \/\/ /g' src/main.cpp
+          sed -i 's/fprintf(/ \/\/ /g' src/main.cpp
+          
+          # 2. Đổi tên công cụ trong code (nếu có)
+          sed -i 's/"resetprop"/"sys_helper"/g' src/main.cpp
+
+      - name: Compile Static Binary
+        run: |
+          # Thiết lập đường dẫn biên dịch
+          export TOOLCHAIN=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64
+          export CLANG=$TOOLCHAIN/bin/aarch64-linux-android33-clang++
+
+          # Biên dịch trực tiếp với tất cả các cờ tối ưu và bảo mật
+          $CLANG \
+            -Iinclude \
+            -Isrc \
+            src/main.cpp \
+            src/resetprop.cpp \
+            src/system_properties.cpp \
+            src/util.cpp \
+            -std=c++17 \
+            -Os \
+            -static \
+            -fdata-sections -ffunction-sections \
+            -Wl,--gc-sections \
+            -fvisibility=hidden \
+            -fno-rtti \
+            -fno-exceptions \
+            -s \
+            -o miui_sys_helper
+
+      - name: Verify Binary
+        run: |
+          ls -al miui_sys_helper
+          file miui_sys_helper
+
+      - name: Upload Stealth Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: miui_sys_helper_static
+          path: miui_sys_helper
