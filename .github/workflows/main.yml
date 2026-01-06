@@ -19,37 +19,35 @@ jobs:
           unzip -q android-ndk-r26b-linux.zip
           echo "ANDROID_NDK_ROOT=$(pwd)/android-ndk-r26b" >> $GITHUB_ENV
 
-      - name: Stealth Patching & Compile (Targeted Build)
+      - name: Stealth Patching & Compile
         run: |
-          # 1. Tìm chính xác thư mục chứa các file .cpp quan trọng
-          # Dựa trên thông tin của bạn: app/src/main/cpp/prop/
-          PROP_DIR=$(find . -type d -name "prop" | head -n 1)
-          if [ -z "$PROP_DIR" ]; then
-            # Nếu không thấy thư mục prop, tìm thư mục chứa resetprop.cpp
-            PROP_DIR=$(dirname $(find . -name "resetprop.cpp" | head -n 1))
-          fi
-          
-          echo "Found source directory at: $PROP_DIR"
-          
-          # 2. Tự động tìm tất cả các thư mục chứa file .h để nạp vào Include
-          # Thường là thư mục 'include' hoặc chính thư mục 'cpp'
-          INCLUDE_FLAGS=$(find . -name "*.h" -exec dirname {} + | sort -u | sed 's/^/-I /')
-          echo "Include flags: $INCLUDE_FLAGS"
-
-          # 3. Stealth Patching: Xóa log trực tiếp trong thư mục nguồn
-          find "$PROP_DIR" -name "*.cpp" -exec sed -i 's/printf(/ \/\/ /g' {} +
-          find "$PROP_DIR" -name "*.cpp" -exec sed -i 's/fprintf(/ \/\/ /g' {} +
-          find "$PROP_DIR" -name "*.cpp" -exec sed -i 's/"resetprop"/"sys_helper"/g' {} +
-
-          # 4. Thiết lập Compiler
+          # 1. Thiết lập Compiler (Dùng API 33 để ổn định nhất)
           export TOOLCHAIN=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64
           export CLANG=$TOOLCHAIN/bin/aarch64-linux-android33-clang++
+          
+          # 2. Định nghĩa các thư mục nguồn dựa trên cấu trúc bạn gửi
+          # Thư mục chứa các file .cpp chính (resetprop.cpp, prop.cpp,...)
+          SRC_DIR="app/src/main/cpp/prop"
+          
+          # Thư mục chứa các file header bổ trợ (system_properties)
+          SYS_PROP_INC="app/src/main/cpp/system_properties/include"
 
-          # 5. Biên dịch Static Binary
-          # Lấy tất cả file .cpp trong thư mục prop và các thư mục con của nó
+          # 3. Stealth Patching: Vô hiệu hóa log
+          find "$SRC_DIR" -name "*.cpp" -exec sed -i 's/printf(/ \/\/ /g' {} +
+          find "$SRC_DIR" -name "*.cpp" -exec sed -i 's/fprintf(/ \/\/ /g' {} +
+          find "$SRC_DIR" -name "*.cpp" -exec sed -i 's/"resetprop"/"sys_helper"/g' {} +
+
+          # 4. Biên dịch: Chỉ định rõ các đường dẫn Include quan trọng nhất
+          # Chúng ta liệt kê rõ các file .cpp để tránh nạp nhầm file rác
           $CLANG \
-            $INCLUDE_FLAGS \
-            $(find "$PROP_DIR" -name "*.cpp") \
+            -I $SRC_DIR \
+            -I $SYS_PROP_INC/api \
+            -I $SYS_PROP_INC/async_safe \
+            -I $SYS_PROP_INC/platform/bionic \
+            -I $SYS_PROP_INC/private \
+            -I $SYS_PROP_INC/property_info_parser \
+            -I $SYS_PROP_INC/system_properties \
+            $SRC_DIR/prop.cpp $SRC_DIR/resetprop.cpp \
             -std=c++17 \
             -Os \
             -static \
@@ -67,7 +65,7 @@ jobs:
             ls -al miui_sys_helper
             file miui_sys_helper
           else
-            echo "Biên dịch thất bại! Không tìm thấy file output."
+            echo "Biên dịch thất bại!"
             exit 1
           fi
 
