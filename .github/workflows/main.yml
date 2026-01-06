@@ -10,7 +10,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          repository: 'yxsra/MagiskResetPropMod'
+          repository: 'thangnguyen2303/MagiskResetPropMod'
           fetch-depth: 0
 
       - name: Install NDK
@@ -19,30 +19,37 @@ jobs:
           unzip -q android-ndk-r26b-linux.zip
           echo "ANDROID_NDK_ROOT=$(pwd)/android-ndk-r26b" >> $GITHUB_ENV
 
-      - name: Stealth Patching & Compile (Ultimate Force)
+      - name: Stealth Patching & Compile (Targeted Build)
         run: |
-          # 1. Tìm tất cả các thư mục chứa file .h và .cpp
-          INCLUDE_DIRS=$(find . -name "*.h" -exec dirname {} + | sort -u | sed 's/^/-I /')
-          CPP_FILES=$(find . -name "*.cpp")
+          # 1. Tìm chính xác thư mục chứa các file .cpp quan trọng
+          # Dựa trên thông tin của bạn: app/src/main/cpp/prop/
+          PROP_DIR=$(find . -type d -name "prop" | head -n 1)
+          if [ -z "$PROP_DIR" ]; then
+            # Nếu không thấy thư mục prop, tìm thư mục chứa resetprop.cpp
+            PROP_DIR=$(dirname $(find . -name "resetprop.cpp" | head -n 1))
+          fi
           
-          echo "Found CPP files: $CPP_FILES"
-          echo "Include flags: $INCLUDE_DIRS"
+          echo "Found source directory at: $PROP_DIR"
+          
+          # 2. Tự động tìm tất cả các thư mục chứa file .h để nạp vào Include
+          # Thường là thư mục 'include' hoặc chính thư mục 'cpp'
+          INCLUDE_FLAGS=$(find . -name "*.h" -exec dirname {} + | sort -u | sed 's/^/-I /')
+          echo "Include flags: $INCLUDE_FLAGS"
 
-          # 2. Stealth Patching: Quét và sửa lỗi trực tiếp trên mọi file tìm được
-          for f in $CPP_FILES; do
-            sed -i 's/printf(/ \/\/ /g' "$f" || true
-            sed -i 's/fprintf(/ \/\/ /g' "$f" || true
-            sed -i 's/"resetprop"/"sys_helper"/g' "$f" || true
-          done
+          # 3. Stealth Patching: Xóa log trực tiếp trong thư mục nguồn
+          find "$PROP_DIR" -name "*.cpp" -exec sed -i 's/printf(/ \/\/ /g' {} +
+          find "$PROP_DIR" -name "*.cpp" -exec sed -i 's/fprintf(/ \/\/ /g' {} +
+          find "$PROP_DIR" -name "*.cpp" -exec sed -i 's/"resetprop"/"sys_helper"/g' {} +
 
-          # 3. Thiết lập Compiler
+          # 4. Thiết lập Compiler
           export TOOLCHAIN=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64
           export CLANG=$TOOLCHAIN/bin/aarch64-linux-android33-clang++
 
-          # 4. Biên dịch: Gom tất cả file tìm được vào một lệnh duy nhất
+          # 5. Biên dịch Static Binary
+          # Lấy tất cả file .cpp trong thư mục prop và các thư mục con của nó
           $CLANG \
-            $INCLUDE_DIRS \
-            $CPP_FILES \
+            $INCLUDE_FLAGS \
+            $(find "$PROP_DIR" -name "*.cpp") \
             -std=c++17 \
             -Os \
             -static \
@@ -60,7 +67,7 @@ jobs:
             ls -al miui_sys_helper
             file miui_sys_helper
           else
-            echo "Biên dịch thất bại!"
+            echo "Biên dịch thất bại! Không tìm thấy file output."
             exit 1
           fi
 
