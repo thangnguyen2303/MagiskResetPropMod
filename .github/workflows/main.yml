@@ -21,36 +21,32 @@ jobs:
 
       - name: Stealth Patching & Compile
         run: |
-          # 1. Thiết lập Compiler (Dùng API 33 để ổn định nhất)
+          # 1. Thiết lập Compiler
           export TOOLCHAIN=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64
           export CLANG=$TOOLCHAIN/bin/aarch64-linux-android33-clang++
           
-          # 2. Định nghĩa các thư mục nguồn dựa trên cấu trúc bạn gửi
-          # Thư mục chứa các file .cpp chính (resetprop.cpp, prop.cpp,...)
+          # 2. Định nghĩa các thư mục
           SRC_DIR="app/src/main/cpp/prop"
-          
-          # Thư mục chứa các file header bổ trợ (system_properties)
-          SYS_PROP_INC="app/src/main/cpp/system_properties/include"
+          # GỐC INCLUDE: Trỏ vào thư mục include tổng để khớp với cách #include <folder/file.h>
+          SYS_PROP_INC_ROOT="app/src/main/cpp/system_properties/include"
 
           # 3. Stealth Patching: Vô hiệu hóa log
           find "$SRC_DIR" -name "*.cpp" -exec sed -i 's/printf(/ \/\/ /g' {} +
           find "$SRC_DIR" -name "*.cpp" -exec sed -i 's/fprintf(/ \/\/ /g' {} +
           find "$SRC_DIR" -name "*.cpp" -exec sed -i 's/"resetprop"/"sys_helper"/g' {} +
 
-          # 4. Biên dịch: Chỉ định rõ các đường dẫn Include quan trọng nhất
-          # Chúng ta liệt kê rõ các file .cpp để tránh nạp nhầm file rác
+          # 4. Biên dịch
+          # -I $SYS_PROP_INC_ROOT: Giúp trình biên dịch tìm thấy <api/...> và <system_properties/...>
+          # Thêm -D_GNU_SOURCE để tránh lỗi thiếu một số định nghĩa hệ thống
           $CLANG \
             -I $SRC_DIR \
-            -I $SYS_PROP_INC/api \
-            -I $SYS_PROP_INC/async_safe \
-            -I $SYS_PROP_INC/platform/bionic \
-            -I $SYS_PROP_INC/private \
-            -I $SYS_PROP_INC/property_info_parser \
-            -I $SYS_PROP_INC/system_properties \
+            -I $SYS_PROP_INC_ROOT \
+            -I $SYS_PROP_INC_ROOT/platform/bionic \
             $SRC_DIR/prop.cpp $SRC_DIR/resetprop.cpp \
             -std=c++17 \
             -Os \
             -static \
+            -D_GNU_SOURCE \
             -fdata-sections -ffunction-sections \
             -Wl,--gc-sections \
             -fvisibility=hidden \
