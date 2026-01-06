@@ -27,17 +27,15 @@ jobs:
           SRC_DIR="app/src/main/cpp/prop"
           SYS_PROP_INC_ROOT="app/src/main/cpp/system_properties/include"
 
-          # 1. Stealth Patching AN TOÀN: 
-          # Thay vì dùng // để comment, ta chèn Macro để vô hiệu hóa printf/fprintf ngay từ đầu file
-          # Điều này giữ nguyên cấu trúc code, tránh lỗi "undeclared identifier"
-          find "$SRC_DIR" -name "*.cpp" -exec sed -i '1i #define printf(...) (void)0' {} +
-          find "$SRC_DIR" -name "*.cpp" -exec sed -i '1i #define fprintf(...) (void)0' {} +
+          # Stealth Patching AN TOÀN: 
+          # Thay vì chèn vào dòng 1, ta chèn vào sau các dòng #include
+          # Cách tốt nhất là dùng cờ compiler -D để biến chúng thành rỗng mà không hại đến header hệ thống
           
-          # Đổi tên nhận diện chuỗi
+          # Đổi tên nhận diện chuỗi trong code
           find "$SRC_DIR" -name "*.cpp" -exec sed -i 's/"resetprop"/"sys_helper"/g' {} +
 
-          # 2. Biên dịch
-          # Thêm các cờ để bỏ qua cảnh báo không quan trọng và link tĩnh
+          # Biên dịch với các Flag định nghĩa rỗng cho printf/fprintf
+          # -D'printf(...)=(void)0' : Biến mọi lệnh printf thành lệnh trống
           $CLANG \
             -I $SRC_DIR \
             -I $SYS_PROP_INC_ROOT \
@@ -47,7 +45,11 @@ jobs:
             -Os \
             -static \
             -D_GNU_SOURCE \
+            -D'printf(...)=(void)0' \
+            -D'fprintf(...)=(void)0' \
             -Wno-c99-extensions \
+            -Wno-format-invalid-specifier \
+            -Wno-format-extra-args \
             -fdata-sections -ffunction-sections \
             -Wl,--gc-sections \
             -fvisibility=hidden \
