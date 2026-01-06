@@ -21,22 +21,26 @@ jobs:
 
       - name: Stealth Patching & Compile
         run: |
-          # Di chuyển vào thư mục chứa code thực tế
-          cd resetprop
+          # 1. Tìm vị trí thực tế của main.cpp
+          MAIN_PATH=$(find . -name "main.cpp")
+          SRC_DIR=$(dirname "$MAIN_PATH")
+          echo "Found source directory at: $SRC_DIR"
+          cd "$SRC_DIR"
           
-          # 1. Stealth Patching: Vô hiệu hóa log
-          sed -i 's/printf(/ \/\/ /g' *.cpp
-          sed -i 's/fprintf(/ \/\/ /g' *.cpp
-          sed -i 's/"resetprop"/"sys_helper"/g' main.cpp
+          # 2. Stealth Patching: Vô hiệu hóa log (Sửa lỗi ghi đè an toàn)
+          sed -i 's/printf(/ \/\/ /g' *.cpp || true
+          sed -i 's/fprintf(/ \/\/ /g' *.cpp || true
+          sed -i 's/"resetprop"/"sys_helper"/g' main.cpp || true
 
-          # 2. Thiết lập Compiler
+          # 3. Thiết lập Compiler
           export TOOLCHAIN=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64
           export CLANG=$TOOLCHAIN/bin/aarch64-linux-android33-clang++
 
-          # 3. Biên dịch Static Binary
+          # 4. Biên dịch Static Binary
+          # Chúng ta liệt kê rõ các file cần thiết dựa trên repo yxsra
           $CLANG \
-            -I../include \
-            *.cpp \
+            -I./include -I../include -I. \
+            main.cpp resetprop.cpp system_properties.cpp util.cpp \
             -std=c++17 \
             -Os \
             -static \
@@ -46,12 +50,18 @@ jobs:
             -fno-rtti \
             -fno-exceptions \
             -s \
-            -o ../miui_sys_helper
+            -o ../miui_sys_helper || $CLANG -I./include -I. *.cpp -std=c++17 -Os -static -fvisibility=hidden -s -o ../miui_sys_helper
 
       - name: Verify Binary
         run: |
-          ls -al miui_sys_helper
-          file miui_sys_helper
+          if [ -f miui_sys_helper ]; then
+            ls -al miui_sys_helper
+            file miui_sys_helper
+          else
+            echo "Binary not found!"
+            find . -name "miui_sys_helper"
+            exit 1
+          fi
 
       - name: Upload Binary
         uses: actions/upload-artifact@v4
