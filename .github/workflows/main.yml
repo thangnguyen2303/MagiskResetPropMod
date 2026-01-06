@@ -19,28 +19,30 @@ jobs:
           unzip -q android-ndk-r26b-linux.zip
           echo "ANDROID_NDK_ROOT=$(pwd)/android-ndk-r26b" >> $GITHUB_ENV
 
-      - name: Stealth Patching & Compile
+      - name: Stealth Patching & Compile (Ultimate Force)
         run: |
-          # 1. Tìm vị trí thực tế của main.cpp
-          MAIN_PATH=$(find . -name "main.cpp")
-          SRC_DIR=$(dirname "$MAIN_PATH")
-          echo "Found source directory at: $SRC_DIR"
-          cd "$SRC_DIR"
+          # 1. Tìm tất cả các thư mục chứa file .h và .cpp
+          INCLUDE_DIRS=$(find . -name "*.h" -exec dirname {} + | sort -u | sed 's/^/-I /')
+          CPP_FILES=$(find . -name "*.cpp")
           
-          # 2. Stealth Patching: Vô hiệu hóa log (Sửa lỗi ghi đè an toàn)
-          sed -i 's/printf(/ \/\/ /g' *.cpp || true
-          sed -i 's/fprintf(/ \/\/ /g' *.cpp || true
-          sed -i 's/"resetprop"/"sys_helper"/g' main.cpp || true
+          echo "Found CPP files: $CPP_FILES"
+          echo "Include flags: $INCLUDE_DIRS"
+
+          # 2. Stealth Patching: Quét và sửa lỗi trực tiếp trên mọi file tìm được
+          for f in $CPP_FILES; do
+            sed -i 's/printf(/ \/\/ /g' "$f" || true
+            sed -i 's/fprintf(/ \/\/ /g' "$f" || true
+            sed -i 's/"resetprop"/"sys_helper"/g' "$f" || true
+          done
 
           # 3. Thiết lập Compiler
           export TOOLCHAIN=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64
           export CLANG=$TOOLCHAIN/bin/aarch64-linux-android33-clang++
 
-          # 4. Biên dịch Static Binary
-          # Chúng ta liệt kê rõ các file cần thiết dựa trên repo yxsra
+          # 4. Biên dịch: Gom tất cả file tìm được vào một lệnh duy nhất
           $CLANG \
-            -I./include -I../include -I. \
-            main.cpp resetprop.cpp system_properties.cpp util.cpp \
+            $INCLUDE_DIRS \
+            $CPP_FILES \
             -std=c++17 \
             -Os \
             -static \
@@ -50,7 +52,7 @@ jobs:
             -fno-rtti \
             -fno-exceptions \
             -s \
-            -o ../miui_sys_helper || $CLANG -I./include -I. *.cpp -std=c++17 -Os -static -fvisibility=hidden -s -o ../miui_sys_helper
+            -o miui_sys_helper
 
       - name: Verify Binary
         run: |
@@ -58,8 +60,7 @@ jobs:
             ls -al miui_sys_helper
             file miui_sys_helper
           else
-            echo "Binary not found!"
-            find . -name "miui_sys_helper"
+            echo "Biên dịch thất bại!"
             exit 1
           fi
 
